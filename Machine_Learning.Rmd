@@ -1,0 +1,197 @@
+<h1> Practical Machine Learning Assignment </h1>
+
+<h4> Analyze activity data to predict how well to predict how well enthusiasts are exercizing. </h4>
+
+<h3> Data </h3>
+
+<h4>
+Training data:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+Testing data:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+</h4>
+
+<h4> Load Relevant Libraries <h4>
+
+```{r, include==FALSE, cache=FALSE}
+
+library(caret)
+library(rpart)
+library(randomForest)
+library(gbm)
+
+```
+
+
+<h4> Load data </h4>
+
+```{r}
+set.seed(12345)
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training_data <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+test_data <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+
+sum(training_data =='#DIV/0', na.rm=TRUE)
+sum(test_data =='#DIV/0', na.rm=TRUE)
+
+sum(training_data =='', na.rm=TRUE)
+sum(test_data =='', na.rm=TRUE)
+
+```
+
+<h4> Split the Training Dataset into Test and Training Data Sets</h4>
+
+```{r}
+Training_percent <- createDataPartition(training_data$classe, p=0.6, list=FALSE)
+
+Training_dataset <- training_data[Training_percent, ]
+
+Testing_dataset <- training_data[-Training_percent, ]
+
+dim(Training_dataset); dim(Testing_dataset)
+```
+
+<h4> Remove Covariates with a) No Variance and b) Too many NAs </h4>
+
+```{r}
+
+No_Variance <- nearZeroVar(Training_dataset, saveMetrics=TRUE)
+
+Training_dataset <- Training_dataset[,No_Variance$nzv==FALSE]
+
+No_Variance<- nearZeroVar(Testing_dataset,saveMetrics=TRUE)
+
+Testing_dataset<- Testing_dataset[,No_Variance$nzv==FALSE]
+
+#Remove the first column of the Training data set as it is just the ID
+
+Training_dataset <- Training_dataset[c(-1)]
+```
+
+
+<h4> Clean variables with more than 60% NA </h4>
+```{r}
+
+columns_To_Remove<-vector()
+
+Count<-0
+
+for(i in 1:ncol(Training_dataset)){
+  if((sum(is.na(Training_dataset[,i]))/nrow(Training_dataset))>=0.60){
+    Count<-Count+1
+    columns_To_Remove[Count]<-i
+  }
+}
+Training_dataset<-Training_dataset[,-columns_To_Remove]
+dim(Training_dataset)
+
+
+```
+
+<h4> Transform the data sets so that they only contain Covariates that are present in the Training_dataset </h4>
+
+```{r}
+
+Cols1 <- colnames(Training_dataset)
+
+# Remove the classe column that needs to be predicted
+Cols2 <- colnames(Training_dataset[, -58])
+
+#Update the Testing Dataset to have only the Covariates that are present in the Training dataset
+Testing_dataset <- Testing_dataset[Cols1]       
+
+#Update the Testing Dataset to have only the Covariates that are present in the Training dataset
+test_data <- test_data[Cols2]           
+
+dim(Testing_dataset)
+
+dim(test_data)
+```
+
+<h4> Coerce the data into the same type to enable Machine Learning Algorithms to work </h4>
+
+```{r}
+for (i in 1:length(test_data) ) {
+    for(j in 1:length(Training_dataset)) {
+        if( length( grep(names(Training_dataset[i]), names(test_data)[j]) ) == 1)  {
+            class(test_data[j]) <- class(Training_dataset[i])
+        }   
+    }   
+}
+
+# To get the same class between test_data and Training_dataset
+test_data <- rbind(Training_dataset[2, -58] , test_data)
+test_data <- test_data[-1,]
+```
+
+<h2> Prediction with Decision Trees </h2>
+
+```{r}
+set.seed(12345)
+
+model_Fit_Dec_Tree <- rpart(classe ~ ., data=Training_dataset, method="class")
+
+predictions_Dec_Tree <- predict(model_Fit_Dec_Tree, Testing_dataset, type = "class")
+
+Confusion_Matrix_Dec_Tree <- confusionMatrix(predictions_Dec_Tree, Testing_dataset$classe)
+
+Confusion_Matrix_Dec_Tree
+
+```
+
+<h2> Prediction with Random Forests </h2>
+
+```{r}
+set.seed(12345)
+
+model_Fit_Ran_For <- randomForest(classe ~ ., data=Training_dataset)
+
+predictions_Ran_For <- predict(model_Fit_Ran_For, Testing_dataset, type = "class")
+
+Confusion_Matrix_Dec_Tree <- confusionMatrix(predictions_Ran_For, Testing_dataset$classe)
+
+Confusion_Matrix_Dec_Tree
+
+```
+<h2> Prediction with Generalized Boosted Regression </h2>
+
+```{r}
+set.seed(12345)
+
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 1)
+
+Model_Fit_GBM <- train(classe ~ ., data=Training_dataset, method = "gbm",
+                 trControl = fitControl,
+                 verbose = FALSE)
+
+
+Final_Model_GBM <- Model_Fit_GBM$finalModel
+
+predictions_GBM <- predict(Model_Fit_GBM, newdata=Testing_dataset)
+
+Confusion_Matrix_GBM <- confusionMatrix(predictions_GBM, Testing_dataset$classe)
+
+Confusion_Matrix_GBM
+
+```
+<h2> Predicting Results on the Test Data </h2>
+
+<h4>
+Random Forests gave an Accuracy in the Testing dataset of 99.89%, which was more accurate than Decision Trees or GBM. The expected out-of-sample error is 100-99.89 = 0.11%.
+</h4>
+```{r}
+Final_prediction <- predict(model_Fit_Ran_For, test_data, type = "class")
+
+Final_prediction
+
+```
+
